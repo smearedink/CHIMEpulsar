@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from glob import glob
 import os, sys
 import scipy.signal as sig
-import pandas as PD
+#import pandas as PD
 
 class CHIMEdata:
     """
