@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 from glob import glob
 import os, sys
 import scipy.signal as sig
-#import pandas as PD
 
 class CHIMEdata:
     """
@@ -31,12 +30,13 @@ class CHIMEdata:
             for datafile in datafiles:
                 print "Loading %s..." % datafile
                 dat = h5.File(datafile, mode='r')
-                vis_sep = dat['vis'].value
-                vis = vis_sep['real'] + 1.j*vis_sep['imag']
-                chunks.append(vis[:,datachan,:])
+                vis = dat['vis'].value['real'] + 1.j*dat['vis'].value['imag']
+#                vis = vis_sep['real'] + 1.j*vis_sep['imag']
+                chunks.append(np.abs(vis[:,datachan,:]).astype('float32'))
+		del vis
                 dat.close()
                 print "Done."
-            self.data = np.abs(np.concatenate(chunks, axis=0))
+            self.data = np.concatenate(chunks, axis=0)
 
         self.data = np.ma.array(self.data,
                                 mask=np.zeros(self.data.shape, dtype=bool))
@@ -398,7 +398,7 @@ chime_fpaths = glob("../20131208T070336Z/20131208T070336Z.h5.*")
 #chime_fpaths = glob("20131121T071019Z/20131121T071019Z.h5.0*")
 chime_fpaths.sort()
 
-data_fname = "em00_20131208T070336Z.npy"
+data_fname = "../em00_20131208T070336Z.npy"
 #data_fname = "em00_20131121T071019Z.npy"
 #data_fname = "em01_20131121T071019Z.npy"
 #data_fname = "em11_20131121T071019Z.npy"
@@ -451,7 +451,7 @@ if os.path.exists(data_fname):
 
 else:
     chd = CHIMEdata(chime_fpaths)
-    chd.save_data("../" + data_fname)
+    chd.save_data(data_fname)
 
 #chd.detailed_mask = np.load("detailed_mask.npy")
 #chd.replace_masked_times_with_noise()
