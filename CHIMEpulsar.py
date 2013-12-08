@@ -29,11 +29,13 @@ class CHIMEdata:
         if not isinstance(datafiles, str):
             chunks = []
             for datafile in datafiles:
-                dat = h5.File(datafile)
+                print "Loading %s..." % datafile
+                dat = h5.File(datafile, mode='r')
                 vis_sep = dat['vis'].value
                 vis = vis_sep['real'] + 1.j*vis_sep['imag']
                 chunks.append(vis[:,datachan,:])
                 dat.close()
+                print "Done."
             self.data = np.abs(np.concatenate(chunks, axis=0))
 
         self.data = np.ma.array(self.data,
@@ -46,7 +48,7 @@ class CHIMEdata:
             - (self.highfreq - self.lowfreq)/self.nfreq/2.
 
         self.nsamp = self.data.shape[0]
-        self.tres = 0.1 # seconds
+        self.tres = 0.01 # seconds
         self.times = np.linspace(0., self.nsamp*self.tres, self.nsamp,
                                  endpoint=False)
 
@@ -303,7 +305,7 @@ class CHIMEdata:
         nyquist_f = 0.5/self.tres # in Hz
         if N is None: N = len(tseries) - (50+50)
 #        fft = np.fft.rfft(tseries - np.mean(tseries), n=N)
-        fft = np.fft.rfft((tseries - running_mean(tseries, 50))[50:-50])
+        fft = np.fft.rfft((tseries - running_mean(tseries, 50))[50:-50], n=N)
         fft_amp = np.abs(fft)
         freq_axis = np.linspace(0, nyquist_f, len(fft_amp))
         if whiten:
@@ -392,9 +394,12 @@ def running_mean(arr, radius=50):
     try: return np.ma.array(ret[n-1:]/n, mask=mask)
     except: return ret[n-1:]/n
 
-chime_fpaths = glob("20131121T071019Z/20131121T071019Z.h5.0*")
+chime_fpaths = glob("../20131208T070336Z/20131208T070336Z.h5.*")
+#chime_fpaths = glob("20131121T071019Z/20131121T071019Z.h5.0*")
+chime_fpaths.sort()
 
-data_fname = "em00_20131121T071019Z.npy"
+data_fname = "em00_20131208T070336Z.npy"
+#data_fname = "em00_20131121T071019Z.npy"
 #data_fname = "em01_20131121T071019Z.npy"
 #data_fname = "em11_20131121T071019Z.npy"
 
@@ -446,10 +451,10 @@ if os.path.exists(data_fname):
 
 else:
     chd = CHIMEdata(chime_fpaths)
-    chd.save_data(data_fname)
+    chd.save_data("../" + data_fname)
 
-chd.detailed_mask = np.load("detailed_mask.npy")
-chd.replace_masked_times_with_noise()
+#chd.detailed_mask = np.load("detailed_mask.npy")
+#chd.replace_masked_times_with_noise()
 
 #chd.mask_freqs(zapfreqs)
 #chd.clip_times(zaptimes)
@@ -470,6 +475,7 @@ def norm_data(data, windowsize=100):
     return new_data
 """
 
+"""
 # assuming fwhm of about 4 degrees, which seems right for the big pulse
 sigma = 4./360./2.355
 pulse_amp = 1.
@@ -489,7 +495,7 @@ def amp_over_bin(bin_start_phase, binwidth=0.1/p0):
         sys.stdout.write("\rProgress: %-5.2f%%" % (100.*float(ii+1)/nbins))
         sys.stdout.flush()
     return amps
-
+"""
 """
 fake_data = np.random.normal(scale=noise_amp, size=chd.data.shape)
 disp_times = chd.times.repeat(chd.nfreq).reshape(fake_data.shape) - chd.dm_delays(DM, 10000.)
@@ -500,6 +506,7 @@ chd_fake = CHIMEdata(data_fname)
 chd_fake.data = np.ma.array(fake_data, mask=chd.data.mask)
 chd_fake.save_data("fake_dat_lownoise.npy")
 """
+"""
 chd_fake = CHIMEdata("fake_dat.npy")
 chd_fake.data.mask = chd.data.mask
-#"""
+"""
