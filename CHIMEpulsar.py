@@ -1,8 +1,7 @@
 import numpy as np
 import h5py as h5
 import matplotlib.pyplot as plt
-from glob import glob
-import os, sys
+import sys
 import scipy.signal as sig
 
 class CHIMEdata:
@@ -16,7 +15,7 @@ class CHIMEdata:
       1: (0, 1)
       8: (1, 1)
     """
-    def __init__(self, datafiles, datachan=0):
+    def __init__(self, datafiles, tres=0.1, datachan=0):
         # If 'data' is a string, check if it ends with .npy
         if isinstance(datafiles, str):
             if datafiles[-4:] == '.npy':
@@ -48,7 +47,7 @@ class CHIMEdata:
             - (self.highfreq - self.lowfreq)/self.nfreq/2.
 
         self.nsamp = self.data.shape[0]
-        self.tres = 0.01 # seconds
+        self.tres = tres
         self.times = np.linspace(0., self.nsamp*self.tres, self.nsamp,
                                  endpoint=False)
 
@@ -61,51 +60,67 @@ class CHIMEdata:
 
         self.detailed_mask = np.zeros(self.data.shape, dtype=bool)
 
-    def auto_detailed_mask(self, threshold=5.):
+    def show(self):
+        plt.figure(figsize=(16, 10))
+        plt.imshow(self.data, aspect='auto', cmap=plt.cm.Greens,
+                   interpolation='nearest', origin='lower')
+        plt.xlabel("frequency channel")
+        plt.ylabel("time sample")
+
+    def auto_freq_mask(self, threshold=3.):
         data = self.data.data
-        channel_medians = np.median(data, axis=0)
-        abs_devs_from_med = np.abs(data - channel_medians)
+        channels = data.sum(axis=0)
+        abs_d2 = np.concatenate((np.zeros(1), np.abs(np.diff(channels, n=2)),\
+            np.zeros(1)))
+        resamp_d2 =\
+            np.array(np.split(abs_d2, self.nfreq/2)).sum(axis=1).repeat(2)
+        mask1 = resamp_d2 > threshold*np.median(resamp_d2)
+        mask1 += (channels < 1.e-3)
+        mask1[0] = True
+        mask1[-1] = True
+        self.data.mask += np.tile(mask1, data.shape[0]).reshape(data.shape)
+
+    def auto_time_mask(self, threshold=5., dt=0.5):
+        data = self.data.data
+        mask = self.data.mask
+        nbins_per_chunk = int(np.rint(dt/self.tres)+0.1)
+        splitter = np.arange(0, data.shape[0], nbins_per_chunk)[1:]
+        spl = np.array_split(data, splitter)
+        dsamp_data = np.array([thing.mean(axis=0) for thing in spl])
+        channel_medians = np.median(dsamp_data, axis=0)
+        abs_devs_from_med = np.abs(dsamp_data - channel_medians)
         channel_mads = np.median(abs_devs_from_med, axis=0)
-        return abs_devs_from_med > threshold*channel_mads
+        dsamp_time_mask = abs_devs_from_med > threshold*channel_mads
+        # Spread out the mask by one additional bin to be safe
+        dsamp_time_mask[1:] = dsamp_time_mask[1:] + dsamp_time_mask[:-1]
+        dsamp_time_mask[:-1] = dsamp_time_mask[1:] + dsamp_time_mask[:-1]
+        tmask = dsamp_time_mask.repeat(nbins_per_chunk, axis=0)[:data.shape[0]]
+        self.data.mask += tmask
 
     def zap_chans(self, first, last, samp1=None, samp2=None, unzap=False):
-        """
-        for detailed mask
-        """
         if samp1 is None: samp1 = 0
         if samp2 is None: samp2 = self.nsamp - 1
         if not unzap:
-            self.detailed_mask[samp1:(samp2+1), first:(last+1)] = True
+            self.data.mask[samp1:(samp2+1), first:(last+1)] = True
         else:
-            self.detailed_mask[samp1:(samp2+1), first:(last+1)] = False
-
-    def show_data_w_mask(self):
-        """
-        for detailed mask
-        """
-        data = np.ma.array(self.data.data, mask=self.detailed_mask)
-        plt.imshow(data, aspect='auto', cmap=plt.cm.Greens, interpolation='nearest')
+            self.data.mask[samp1:(samp2+1), first:(last+1)] = False
 
     def replace_masked_times_with_noise(self):
-        """
-        for detailed mask
-        """
-        data = np.ma.array(self.data.data, mask=self.detailed_mask.copy())
-        actual_mask = np.zeros(data.shape, dtype=bool)
+        new_mask = np.zeros(self.data.shape, dtype=bool)
         for ii in range(self.nfreq):
-            chan_mask = self.detailed_mask[:,ii].copy()
+            chan_mask = self.data.mask[:,ii].copy()
             n_masked_bins = len(chan_mask.nonzero()[0])
             if self.nsamp - n_masked_bins:
-                chan_mean = np.mean(data[:,ii])
-                chan_std = np.std(data[:,ii])
+                chan_mean = np.mean(self.data[:,ii])
+                chan_std = np.std(self.data[:,ii])
                 noise = np.random.normal(chan_mean, chan_std, n_masked_bins)
-                data[self.detailed_mask[:,ii],ii] = noise
+                self.data.data[chan_mask,ii] = noise
             else:
-                actual_mask[:,ii] = True
+                new_mask[:,ii] = True
             sys.stdout.write("\rProgress: %-5.2f%%" %\
                 (100.*float(ii+1)/self.nfreq))
             sys.stdout.flush()
-        self.data = np.ma.array(data.data, mask=actual_mask)
+        self.data.mask = new_mask
 
     def dm_delays(self, dm, f_ref):
         """
@@ -141,12 +156,13 @@ class CHIMEdata:
         nsamp = end_samp - start_samp
         nfreq = end_chan - start_chan
         k_flt = self.dm_delays(dm, freqs[0])[start_chan:end_chan]/self.tres
-        k = (np.round(k_flt) + 0.1).astype(int)
+        k = (np.rint(k_flt) + 0.1).astype(int)
         tseries = np.zeros(nsamp, dtype=float)
         for ll in range(nfreq):
             if not data.mask[:,ll][0]:
                 tseries += np.roll(data[:,ll], k[ll])
-        if not no_save: self.tseries = TimeSeries(tseries[np.max(k):], dm)
+        if not no_save:
+            self.tseries = TimeSeries(tseries[np.max(k):], self.tres, dm)
         return tseries[np.max(k):]
 
     def fold_pulsar(self, p0, dm, nbins=32, **kwargs):
@@ -174,24 +190,20 @@ class CHIMEdata:
         else: start_samp = 0
         if kwargs.has_key('end_samp'): end_samp = kwargs['end_samp']
         else: end_samp = self.nsamp
-        data = self.data[start_samp:end_samp, start_chan:end_chan]
+        data = self.data[start_samp:end_samp, start_chan:end_chan].copy()
         data -= running_mean(data)
         freqs = self.freqs[start_chan:end_chan]
         times = self.times[start_samp:end_samp]
         if kwargs.has_key('f_ref'): f_ref = kwargs['f_ref']
         else: f_ref = freqs[0] 
         profile = np.zeros(nbins, dtype=float)
-#        counts = np.zeros(nbins, dtype=float)
         ddtimes = times.repeat(len(freqs)).reshape(data.shape)\
             - self.dm_delays(dm, f_ref)[start_chan:end_chan]
         phases = ddtimes / p0 % 1.
         which_bins = (phases * nbins).astype(int)
         for ii in range(nbins):
             vals = data[which_bins == ii]
-#            counts[ii] = len((~vals.mask).nonzero()[0])
-#            profile[ii] += vals.sum()
             profile[ii] += vals.mean()
-#        return profile/counts
         if not no_save: self.profile = Profile(profile, p0, dm, nbins)
         return profile
 
@@ -215,20 +227,19 @@ class CHIMEdata:
         low_f = self.freqs[-1]
         high_f = self.freqs[0]
         waterfall = []
-#        top_freqs = []
         for ii in range(nsubs):
             start_chan = ii*(self.nfreq/nsubs)
             end_chan = (ii+1)*(self.nfreq/nsubs)
             seg_freqs = self.freqs[start_chan:end_chan]
-#            top_freqs.append(seg_freqs[0])
             if dedisp: f_ref = self.freqs[0]
             else: f_ref = seg_freqs[0]
             row = self.fold_pulsar(p0, dm, nbins,\
                 start_samp=start_samp, end_samp=end_samp,
                 start_chan=start_chan, end_chan=end_chan, f_ref=f_ref,\
                 no_save=True)
-#            row -= np.median(row)
-#            row /= np.std(row)
+            sys.stdout.write("\rProgress: %-5.2f%%" %\
+                (100.*float(ii+1)/nsubs))
+            sys.stdout.flush()
             waterfall.append(np.tile(row, 2))
         waterfall = np.array(waterfall)
         if not no_save:
@@ -253,9 +264,11 @@ class CHIMEdata:
             row = self.fold_pulsar(p0, dm, nbins,\
                 start_samp=start_samp, end_samp=end_samp,\
                 no_save=True)
-#            row -= np.median(row)
-#            row /= np.std(row)
             waterfall.append(np.tile(row, 2))
+            sys.stdout.write("\rProgress: %-5.2f%%" %\
+                (100.*float(ii+1)/nints))
+            sys.stdout.flush()
+
         waterfall = np.array(waterfall)
         if not no_save:
             self.phase_vs_time = PhaseVSTimePlot(waterfall,\
@@ -353,11 +366,39 @@ class PhaseVSTimePlot:
         plt.ylabel("observing time (s)")
 
 class TimeSeries:
-    def __init__(self, data, dm=None):
+    def __init__(self, data, tres=None, dm=None):
         self.data = data
+        self.tres = tres
         self.dm = dm
     def show(self):
         plt.plot(self.data)
+    def save_dat(self, fname):
+        nsamp = len(self.data)
+        if fname.split('.')[-1] == 'dat': fname = fname[:-4]
+        if nsamp % 2:
+            self.data[1:].astype('float32').tofile(fname + '.dat')
+            nsamp -= 1
+        else:
+            self.data.astype('float32').tofile(fname + '.dat')
+        inf_file = open(fname + '.inf', 'w')
+        inf_file.write(
+            ' Data file name without suffix          =  %s' % fname
+            + '\n Telescope used                         =  CHIME'
+            + '\n Instrument used                        =  CHIME'
+            + '\n Object being observed                  =  NA'
+            + '\n J2000 Right Ascension (hh:mm:ss.ssss)  =  00:00:00.0000'
+            + '\n J2000 Declination     (dd:mm:ss.ssss)  =  00:00:00.0000'
+            + '\n Data observed by                       =  NA'
+            + '\n Epoch of observation (MJD)             =  50000.0'
+            + '\n Barycentered?           (1=yes, 0=no)  =  1'
+            + '\n Number of bins in the time series      =  %d' % nsamp
+            + '\n Width of each time series bin (sec)    =  %.2f' % self.tres
+            + '\n Any breaks in the data? (1=yes, 0=no)  =  0'
+            + '\n Type of observation (EM band)          =  Radio'
+            + '\n Data analyzed by                       =  NA'
+            + '\n Any additional notes:'
+        )
+        inf_file.close()
 
 class Spectrum:
     def __init__(self, data, freq_axis, dm=None, whitened=None):
@@ -394,119 +435,3 @@ def running_mean(arr, radius=50):
     try: return np.ma.array(ret[n-1:]/n, mask=mask)
     except: return ret[n-1:]/n
 
-chime_fpaths = glob("../20131208T070336Z/20131208T070336Z.h5.*")
-#chime_fpaths = glob("20131121T071019Z/20131121T071019Z.h5.0*")
-chime_fpaths.sort()
-
-data_fname = "../em00_20131208T070336Z.npy"
-#data_fname = "em00_20131121T071019Z.npy"
-#data_fname = "em01_20131121T071019Z.npy"
-#data_fname = "em11_20131121T071019Z.npy"
-
-DM = 26.833
-
-#p0 = 0.7145196997258 <-- 10 years ago
-p0 = 0.7145214963305137 * (1. + 8.77e-6)
-# (the correction comes from V_lsr which I think is -2.63 km/s and probably
-# makes no difference)
-
-zapfreqs = [
-    (0,0),
-    (268,269),
-    (553,599),
-    (630,660),
-    (676,691),
-#    (754,767),
-    (754,798),
-#    (784,798),
-    (806,813),
-    (846,846),
-    (855,859),
-    (868,868),
-    (873,882),
-    (889,890),
-    (895,895),
-    (974,975),
-    (977,978),
-    (988,1023),
-]
-
-zaptimes = [
-    (0,0),
-    (4006,4006),
-    (4261,4261),
-#    (8346,8407),
-    (8150,8550),
-    (12215,12215),
-    (12585,12585),
-#    (13050,13111),
-    (12850,13450),
-    (14425,14425),
-    (20809,20809),
-    (22297,22297),
-]
-
-if os.path.exists(data_fname):
-    chd = CHIMEdata(data_fname)
-
-else:
-    chd = CHIMEdata(chime_fpaths)
-    chd.save_data(data_fname)
-
-#chd.detailed_mask = np.load("detailed_mask.npy")
-#chd.replace_masked_times_with_noise()
-
-#chd.mask_freqs(zapfreqs)
-#chd.clip_times(zaptimes)
-
-"""
-def norm_data(data, windowsize=100):
-    new_data = data.copy()
-    nbins = data.shape[0]
-    bins = np.array(range(nbins))
-    lows = bins - windowsize/2
-    highs = bins + windowsize/2
-    highs[np.where(lows < 0)] -= lows[np.where(lows < 0)]
-    lows[np.where(lows < 0)] = 0
-    lows[np.where(highs > nbins)] -= (highs[np.where(highs > nbins)] - nbins)
-    highs[np.where(highs > nbins)] = nbins
-    for ii in bins:
-        new_data[ii] -= data[lows[ii]:highs[ii]].mean(axis=0)
-    return new_data
-"""
-
-"""
-# assuming fwhm of about 4 degrees, which seems right for the big pulse
-sigma = 4./360./2.355
-pulse_amp = 1.
-noise_amp = 1.
-ph_N = 1000
-ph = np.linspace(0, 1, ph_N, endpoint=False)
-ph_doub = np.concatenate((ph, ph+1.))
-pulse = pulse_amp*np.exp(-0.5*pow((ph-0.5)/sigma, 2))
-pulse_doub = np.tile(pulse, 2)
-def amp_over_bin(bin_start_phase, binwidth=0.1/p0):
-    left = np.searchsorted(ph_doub, bin_start_phase)
-    nbins = int(np.round(binwidth * ph_N) + 0.1)
-    if np.isscalar(left): left = np.array([left])
-    amps = np.zeros(np.shape(left))
-    for ii in range(nbins):
-        amps += pulse_doub[left+ii]/nbins
-        sys.stdout.write("\rProgress: %-5.2f%%" % (100.*float(ii+1)/nbins))
-        sys.stdout.flush()
-    return amps
-"""
-"""
-fake_data = np.random.normal(scale=noise_amp, size=chd.data.shape)
-disp_times = chd.times.repeat(chd.nfreq).reshape(fake_data.shape) - chd.dm_delays(DM, 10000.)
-phases = disp_times / p0 % 1.
-fake_data += amp_over_bin(phases)
-
-chd_fake = CHIMEdata(data_fname)
-chd_fake.data = np.ma.array(fake_data, mask=chd.data.mask)
-chd_fake.save_data("fake_dat_lownoise.npy")
-"""
-"""
-chd_fake = CHIMEdata("fake_dat.npy")
-chd_fake.data.mask = chd.data.mask
-"""
