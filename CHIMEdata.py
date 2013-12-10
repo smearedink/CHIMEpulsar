@@ -191,7 +191,8 @@ class CHIMEdata:
         if kwargs.has_key('end_samp'): end_samp = kwargs['end_samp']
         else: end_samp = self.nsamp
         data = self.data[start_samp:end_samp, start_chan:end_chan].copy()
-        data -= running_mean(data)
+#        data -= running_mean(data)
+	data /= running_mean(data)
         freqs = self.freqs[start_chan:end_chan]
         times = self.times[start_samp:end_samp]
         if kwargs.has_key('f_ref'): f_ref = kwargs['f_ref']
