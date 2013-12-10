@@ -317,7 +317,6 @@ class CHIMEdata:
             start_samp=start_samp, end_samp=end_samp)
         nyquist_f = 0.5/self.tres # in Hz
         if N is None: N = len(tseries) - (50+50)
-#        fft = np.fft.rfft(tseries - np.mean(tseries), n=N)
         fft = np.fft.rfft((tseries - running_mean(tseries, 50))[50:-50], n=N)
         fft_amp = np.abs(fft)
         freq_axis = np.linspace(0, nyquist_f, len(fft_amp))
@@ -345,6 +344,7 @@ class PhaseVSFreqPlot:
         self.dm = dm
         self.dedisp = dedisp
     def show(self):
+        plt.figure(figsize=(12, 9))
         plt.imshow(self.data, aspect='auto', cmap=plt.cm.Greens,
                    interpolation='nearest', origin='upper',
                    extent=(0., 2., self.low_f, self.high_f))
@@ -359,6 +359,7 @@ class PhaseVSTimePlot:
         self.p0 = p0
         self.dm = dm
     def show(self):
+        plt.figure(figsize=(12, 9))
         plt.imshow(self.data, aspect='auto', cmap=plt.cm.Greens,
                    interpolation='nearest', origin='lower',
                    extent=(0., 2., self.start_t, self.end_t))
@@ -371,6 +372,7 @@ class TimeSeries:
         self.tres = tres
         self.dm = dm
     def show(self):
+        plt.figure(figsize=(12, 9))
         plt.plot(self.data)
     def save_dat(self, fname):
         nsamp = len(self.data)
@@ -407,9 +409,11 @@ class Spectrum:
         self.dm = dm
         self.whitened = whitened
     def show(self):
+        plt.figure(figsize=(12, 9))
         plt.plot(self.freq_axis, self.data)
         plt.xlabel("frequency (Hz)")
     def show_power(self):
+        plt.figure(figsize=(12, 9))
         plt.plot(self.freq_axis, self.data**2)
         plt.xlabel("frequency (Hz)")
 
@@ -420,6 +424,7 @@ class Profile:
         self.dm = dm
         self.nbins = nbins
     def show(self):
+        plt.figure(figsize=(12, 9))
         plt.plot(np.linspace(0, 2, 2*len(self.data), endpoint=False),
                  np.tile(self.data, 2))
         plt.xlabel("phase")
