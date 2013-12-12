@@ -120,8 +120,8 @@ class CHIMEdata:
             sys.stdout.write("\rProgress: %-5.2f%%" %\
                 (100.*float(ii+1)/self.nfreq))
             sys.stdout.flush()
-	if save_time_mask:
-            self.time_mask = self.data.mask
+	    if save_time_mask:
+            self.time_mask = self.data.mask.copy()
         self.data.mask = new_mask
 
     def dm_delays(self, dm, f_ref):
