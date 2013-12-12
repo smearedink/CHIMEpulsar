@@ -105,7 +105,7 @@ class CHIMEdata:
         else:
             self.data.mask[samp1:(samp2+1), first:(last+1)] = False
 
-    def replace_masked_times_with_noise(self):
+    def replace_masked_times_with_noise(self, save_time_mask=True):
         new_mask = np.zeros(self.data.shape, dtype=bool)
         for ii in range(self.nfreq):
             chan_mask = self.data.mask[:,ii].copy()
@@ -120,6 +120,8 @@ class CHIMEdata:
             sys.stdout.write("\rProgress: %-5.2f%%" %\
                 (100.*float(ii+1)/self.nfreq))
             sys.stdout.flush()
+	if save_time_mask:
+            self.time_mask = self.data.mask
         self.data.mask = new_mask
 
     def dm_delays(self, dm, f_ref):
