@@ -8,14 +8,16 @@ class CHIMEdata:
     """
     CHIME frequency and time data with some pulsar-related methods.
 
-    'data' should either be a single .npy file or a list of raw CHIME files.
+    'data' should either be a single .npy file as saved by the save_data
+     method or an ordered list of CHIME hdf5 files.
 
-    'datachan' should (for now) be 0, 1, or 8:
-      0: (0, 0)
-      1: (0, 1)
-      8: (1, 1)
+    'datachans' specifies which antenna-pair channels to use.  For now, only
+     boring incoherent power sums are used, so this should probably either be
+     one number that is the channel of a single feed's auto-correlation, or a
+     list of such channels, since in the latter case, the visibilities are just
+     going to have their magnitudes summed.
     """
-    def __init__(self, datafiles, tres=0.1, datachan=0):
+    def __init__(self, datafiles, tres=0.1, datachans=0):
         # If 'data' is a string, check if it ends with .npy
         if isinstance(datafiles, str):
             if datafiles[-4:] == '.npy':
@@ -30,9 +32,12 @@ class CHIMEdata:
                 print "Loading %s..." % datafile
                 dat = h5.File(datafile, mode='r')
                 vis = dat['vis'].value['real'] + 1.j*dat['vis'].value['imag']
-#                vis = vis_sep['real'] + 1.j*vis_sep['imag']
-                chunks.append(np.abs(vis[:,datachan,:]).astype('float32'))
-		del vis
+                if isinstance(datachans, int):
+                    datachans = [datachans]
+                chunks.append(
+                    np.abs(vis[:,datachans,:]).sum(axis=1).astype('float32')
+                )
+                del vis
                 dat.close()
                 print "Done."
             self.data = np.concatenate(chunks, axis=0)
@@ -58,16 +63,22 @@ class CHIMEdata:
         self.phase_vs_freq = None
         self.phase_vs_time = None
 
-        self.detailed_mask = np.zeros(self.data.shape, dtype=bool)
-
-    def show(self):
+    def show(self, withmask=True):
         plt.figure(figsize=(16, 10))
-        plt.imshow(self.data, aspect='auto', cmap=plt.cm.Greens,
-                   interpolation='nearest', origin='lower')
+        if withmask:
+            plt.imshow(self.data, aspect='auto', cmap=plt.cm.Greens,
+                       interpolation='nearest', origin='lower')
+        else:
+            plt.imshow(self.data.data, aspect='auto', cmap=plt.cm.Greens,
+                       interpolation='nearest', origin='lower')
         plt.xlabel("frequency channel")
         plt.ylabel("time sample")
 
     def auto_freq_mask(self, threshold=3.):
+        """
+        Try to mask particular frequency channels that seem to be dominated by
+         RFI.
+        """
         data = self.data.data
         channels = data.sum(axis=0)
         abs_d2 = np.concatenate((np.zeros(1), np.abs(np.diff(channels, n=2)),\
@@ -81,6 +92,15 @@ class CHIMEdata:
         self.data.mask += np.tile(mask1, data.shape[0]).reshape(data.shape)
 
     def auto_time_mask(self, threshold=5., dt=0.5):
+        """
+        Try to mask particular samples channel-by-channel that seem to be RFI
+         spikes.  The data are downsampled to time resolution 'dt', and the
+         masking is applied to chunks of this size, and one 'dt' to either side
+         of any chunk that is identified for masking.
+
+        Time masking should be following by replace_masked_times_with_noise,
+         since gaps in time cause problems when dedispersing.
+        """
         data = self.data.data
         mask = self.data.mask
         nbins_per_chunk = int(np.rint(dt/self.tres)+0.1)
@@ -97,9 +117,16 @@ class CHIMEdata:
         tmask = dsamp_time_mask.repeat(nbins_per_chunk, axis=0)[:data.shape[0]]
         self.data.mask += tmask
 
-    def zap_chans(self, first, last, samp1=None, samp2=None, unzap=False):
+    def zap_chans(self, first, last=None, samp1=None, samp2=None, unzap=False):
+        """
+        Mask out a range of frequency channels (specified by channel index).
+
+        If 'last' is not specified, it is assumed to be the same as 'first'
+         (ie, only one frequency channel is zapped)
+        """
         if samp1 is None: samp1 = 0
         if samp2 is None: samp2 = self.nsamp - 1
+        if last is None: last = first
         if not unzap:
             self.data.mask[samp1:(samp2+1), first:(last+1)] = True
         else:
@@ -120,7 +147,7 @@ class CHIMEdata:
             sys.stdout.write("\rProgress: %-5.2f%%" %\
                 (100.*float(ii+1)/self.nfreq))
             sys.stdout.flush()
-	    if save_time_mask:
+        if save_time_mask:
             self.time_mask = self.data.mask.copy()
         self.data.mask = new_mask
 
@@ -193,8 +220,12 @@ class CHIMEdata:
         if kwargs.has_key('end_samp'): end_samp = kwargs['end_samp']
         else: end_samp = self.nsamp
         data = self.data[start_samp:end_samp, start_chan:end_chan].copy()
-#        data -= running_mean(data)
-	data /= running_mean(data)
+        # Dividing out a per-channel running mean (with the default radius of
+        # 50 data points here) gets rid of the slow variation of the signal
+        # over time and also, unlike subtracting the mean, appears to give the
+        # noise the same amplitude across all frequency channels.  However, I
+        # am not sure how 'correct' this is conceptually.
+        data /= running_mean(data)
         freqs = self.freqs[start_chan:end_chan]
         times = self.times[start_samp:end_samp]
         if kwargs.has_key('f_ref'): f_ref = kwargs['f_ref']
@@ -213,6 +244,10 @@ class CHIMEdata:
     def calc_phase_vs_freq(self, p0, dm, nbins=32, nsubs=32, dedisp=True,
                            **kwargs):
         """
+        Calculate a phase-vs-frequency waterfall plot and store it in
+         self.phase_vs_freq
+        This can be plotted using self.phase_vs_freq.show()
+
         kwargs:
           start_samp: fold using data at or above this sample index
           end_samp: fold using data below this sample index
@@ -252,7 +287,14 @@ class CHIMEdata:
 
     def calc_phase_vs_time(self, p0, dm, nbins=32, nints=32, **kwargs):
         """
+        Calculate a phase-vs-time waterfall plot and store it in
+         self.phase_vs_time
+        This can be plotted using self.phase_vs_time.show()
+
         kwargs:
+          no_save: if this is True, return output but don't store it in object
+          (By default, it is False)
+
           no_save: if this is True, return output but don't store it in object
           (By default, it is False)
         """
@@ -278,22 +320,10 @@ class CHIMEdata:
                 start_t, end_t, p0, dm)
         return waterfall
 
-    def mask_freqs(self, channel_ranges):
-        for item in channel_ranges:
-            self.data.mask[:, item[0]:(item[1]+1)] = True
-
-    def clip_times(self, sample_ranges):
-        for item in sample_ranges:
-            before = self.data[item[0]-1]
-            after = self.data[item[1]+1]
-            if item[0] == 0: before = after
-            if item[1] == self.nsamp - 1: after = before
-            self.data[item[0]:(item[1]+1)] = 0.5*(before + after)
-
     def calc_spectrum(self, dm, N=None, whiten=False, **kwargs):
         """
-        Not a lot of thought was put into the whitening, and it may be
-        pretty sketchy.
+        Not a lot of thought was put into the whitening, and it's almost
+         certainly pretty sketchy
 
         kwargs:
           start_chan: fold using data at or above this channel index
@@ -334,7 +364,7 @@ class CHIMEdata:
 
     def save_data(self, out_fname):
         """
-        Saves the data without the mask.
+        Saves the data (without the mask).
         """
         np.save(out_fname, self.data.data)
 
@@ -378,6 +408,11 @@ class TimeSeries:
         plt.figure(figsize=(12, 9))
         plt.plot(self.data)
     def save_dat(self, fname):
+        """
+        This saves a data/header pair that can be read in by the pulsar
+        search software PRESTO--in particular, its 'prepfold', 'accelsearch',
+        'exploredat', and 'realfft' functions
+        """
         nsamp = len(self.data)
         if fname.split('.')[-1] == 'dat': fname = fname[:-4]
         if nsamp % 2:
@@ -433,6 +468,10 @@ class Profile:
         plt.xlabel("phase")
 
 def running_mean(arr, radius=50):
+    """
+    It might be better to use something a little more sophisticated than this,
+    but this gets the job done for now.
+    """
     n = radius*2+1
     try: mask = arr.mask
     except: pass
