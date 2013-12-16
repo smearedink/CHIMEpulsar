@@ -4,7 +4,9 @@ CHIMEpulsar
 Scripts for looking at pulsars in CHIME data.  There is some (questionably) useful information in the docstrings.  I'll give a few usage examples here.
 
 In all of these cases let's assume this module has been imported like so:
->> import CHIMEpulsar.CHIMEdata as ch
+```python
+import CHIMEpulsar.CHIMEdata as ch
+```
 
 If you have a set of contiguous hdf5 files, put the filenames in a sorted list (I recommend using the "glob" command in the "glob" module) and read them in like so:
 
