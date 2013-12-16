@@ -141,7 +141,7 @@ class CHIMEdata:
 
             stepsizes = np.diff(self.fpga_count)
             nsamps_per_samp = stepsizes/np.min(stepsizes)
-            insert_before = np.where(nsamps_per_samp > 1)[0] + 1i
+            insert_before = np.where(nsamps_per_samp > 1)[0] + 1
             # subtract 1 because nsamps_per_samp = 1 means there is no gap
             size_of_gap = nsamps_per_samp[insert_before - 1] - 1
 
