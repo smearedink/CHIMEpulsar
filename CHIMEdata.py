@@ -28,6 +28,7 @@ class CHIMEdata:
 
         if not isinstance(datafiles, str):
             chunks = []
+            tstamps = []
             for datafile in datafiles:
                 print "Loading %s..." % datafile
                 dat = h5.File(datafile, mode='r')
@@ -38,9 +39,11 @@ class CHIMEdata:
                     np.abs(vis[:,datachans,:]).sum(axis=1).astype('float32')
                 )
                 del vis
+                tstamps.append(dat['timestamp'].value['fpga_count'])
                 dat.close()
                 print "Done."
             self.data = np.concatenate(chunks, axis=0)
+            self.fpga_count = np.concatenate(tstamps)
 
         self.data = np.ma.array(self.data,
                                 mask=np.zeros(self.data.shape, dtype=bool))
@@ -117,20 +120,43 @@ class CHIMEdata:
         tmask = dsamp_time_mask.repeat(nbins_per_chunk, axis=0)[:data.shape[0]]
         self.data.mask += tmask
 
-    def zap_chans(self, first, last=None, samp1=None, samp2=None, unzap=False):
+    def pad_missing_samples(self):
         """
-        Mask out a range of frequency channels (specified by channel index).
+        This checks self.fpga_count for dropped samples and, where present,
+        inserts dummy values into the appropriate points in the data and masks
+        those values.
 
-        If 'last' is not specified, it is assumed to be the same as 'first'
-         (ie, only one frequency channel is zapped)
+        This should almost certainly be followed by a call to
+        replace_masked_times_with_noise.
         """
-        if samp1 is None: samp1 = 0
-        if samp2 is None: samp2 = self.nsamp - 1
-        if last is None: last = first
-        if not unzap:
-            self.data.mask[samp1:(samp2+1), first:(last+1)] = True
-        else:
-            self.data.mask[samp1:(samp2+1), first:(last+1)] = False
+        data = self.data.data.copy()
+        mask = self.data.mask.copy()
+
+        stepsizes = np.diff(self.fpga_count)
+        nsamps_per_samp = stepsizes/np.min(stepsizes)
+        insert_before = np.where(nsamps_per_samp > 1)[0] + 1i
+        # subtract 1 because nsamps_per_samp = 1 means there is no gap
+        size_of_gap = nsamps_per_samp[insert_before - 1] - 1
+
+        all_inserts = np.ones(size_of_gap.sum(), data.shape[1]), dtype=bool)
+        where_inserts = []
+        for ii in range(len(size_of_gap)):
+            where_inserts += size_of_gap[ii] * [insert_before[ii]]
+
+        data = np.insert(data,
+                         where_inserts,
+                         all_inserts.astype(data.dtype),
+                         axis=0)
+
+        mask = np.insert(mask,
+                         where_inserts,
+                         all_inserts,
+                         axis=0)
+
+        self.data = np.ma.array(data, mask=mask)
+        self.nsamp = self.data.shape[0]
+        self.times = np.linspace(0., self.nsamp*self.tres, self.nsamp,
+                                 endpoint=False)
 
     def replace_masked_times_with_noise(self, save_time_mask=True):
         new_mask = np.zeros(self.data.shape, dtype=bool)
@@ -150,6 +176,21 @@ class CHIMEdata:
         if save_time_mask:
             self.time_mask = self.data.mask.copy()
         self.data.mask = new_mask
+
+    def zap_chans(self, first, last=None, samp1=None, samp2=None, unzap=False):
+        """
+        Mask out a range of frequency channels (specified by channel index).
+
+        If 'last' is not specified, it is assumed to be the same as 'first'
+         (ie, only one frequency channel is zapped)
+        """
+        if samp1 is None: samp1 = 0
+        if samp2 is None: samp2 = self.nsamp - 1
+        if last is None: last = first
+        if not unzap:
+            self.data.mask[samp1:(samp2+1), first:(last+1)] = True
+        else:
+            self.data.mask[samp1:(samp2+1), first:(last+1)] = False
 
     def dm_delays(self, dm, f_ref):
         """
