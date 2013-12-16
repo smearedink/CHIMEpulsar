@@ -49,6 +49,12 @@ chd.spectrum.show()
 
 (You may need to follow this and all other '.show()' commands with ch.plt.show()
 
+If you want to dedisperse the data to a 1D time series at some dispersion measure DM:
+```python
+chd.dedisperse(DM)
+chd.tseries.show()
+```
+
 If you want to fold a pulsar with period p0 and dispersion measure DM using all of the (unmasked) data:
 ```python
 chd.fold_pulsar(p0, DM, nbins)
