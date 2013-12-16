@@ -19,7 +19,7 @@ chd = ch.CHIMEdata(chime_fpaths, datachans=0)
 
 The data is stored in chd.data as a 2D array over frequency and time.
 
-The "datachans" argument can be a single number of a list of numbers.  It refers to the correlator channel(s) read in from the data.  At this time, it's assumed that autocorrelations are being used and multiple channels are simply added together.
+The "datachans" argument can be a single integer or a list of integers.  It refers to the correlator channel(s) read in from the data.  At this time, it's assumed that autocorrelations are being used and multiple channels are simply added together.
 
 You can save the data you've read in to a smaller, faster-loading .npy file:
 ```python
