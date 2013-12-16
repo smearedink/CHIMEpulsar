@@ -131,7 +131,7 @@ class CHIMEdata:
         This should almost certainly be followed by a call to
         replace_masked_times_with_noise.
         """
-        if self.data.shape[0] == len(self.fpga_count):
+        if self.data.shape[0] > len(self.fpga_count):
             print "The number of samples is greater than the number of "\
                 "timestamps.  It looks as though padding was already "\
                 "performed on this data."
@@ -145,7 +145,7 @@ class CHIMEdata:
             # subtract 1 because nsamps_per_samp = 1 means there is no gap
             size_of_gap = nsamps_per_samp[insert_before - 1] - 1
 
-            all_inserts = np.ones(size_of_gap.sum(), data.shape[1]), dtype=bool)
+            all_inserts = np.ones((size_of_gap.sum(), data.shape[1]), dtype=bool)
             where_inserts = []
             for ii in range(len(size_of_gap)):
                 where_inserts += size_of_gap[ii] * [insert_before[ii]]
