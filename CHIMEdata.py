@@ -17,16 +17,19 @@ class CHIMEdata:
      list of such channels, since in the latter case, the visibilities are just
      going to have their magnitudes summed.
     """
-    def __init__(self, datafiles, tres=0.1, datachans=0):
+    def __init__(self, datafiles, datachans=0):
         # If 'data' is a string, check if it ends with .npy
         if isinstance(datafiles, str):
             if datafiles[-4:] == '.npy':
-                self.data = np.load(datafiles)
+                self.data, self.fpga_count, self.tres = np.load(datafiles)
             else:
                 # Make it a list so it gets caught by the next if statement
                 datafiles = [datafiles]
 
         if not isinstance(datafiles, str):
+            dat = h5.File(datafiles[0], mode='r')
+            self.tres = dat.attrs['fpga.int_period'][0]
+            dat.close()
             chunks = []
             tstamps = []
             for datafile in datafiles:
@@ -45,8 +48,8 @@ class CHIMEdata:
             self.data = np.concatenate(chunks, axis=0)
             self.fpga_count = np.concatenate(tstamps)
 
-        self.data = np.ma.array(self.data,
-                                mask=np.zeros(self.data.shape, dtype=bool))
+            self.data = np.ma.array(self.data,
+                                    mask=np.zeros(self.data.shape, dtype=bool))
 
         self.nfreq = self.data.shape[1]
         self.highfreq = 800.
@@ -55,7 +58,6 @@ class CHIMEdata:
             - (self.highfreq - self.lowfreq)/self.nfreq/2.
 
         self.nsamp = self.data.shape[0]
-        self.tres = tres
         self.times = np.linspace(0., self.nsamp*self.tres, self.nsamp,
                                  endpoint=False)
 
@@ -129,34 +131,39 @@ class CHIMEdata:
         This should almost certainly be followed by a call to
         replace_masked_times_with_noise.
         """
-        data = self.data.data.copy()
-        mask = self.data.mask.copy()
+        if self.data.shape[0] == len(self.fpga_count):
+            print "The number of samples is greater than the number of "\
+                "timestamps.  It looks as though padding was already "\
+                "performed on this data."
+        else:
+            data = self.data.data.copy()
+            mask = self.data.mask.copy()
 
-        stepsizes = np.diff(self.fpga_count)
-        nsamps_per_samp = stepsizes/np.min(stepsizes)
-        insert_before = np.where(nsamps_per_samp > 1)[0] + 1i
-        # subtract 1 because nsamps_per_samp = 1 means there is no gap
-        size_of_gap = nsamps_per_samp[insert_before - 1] - 1
+            stepsizes = np.diff(self.fpga_count)
+            nsamps_per_samp = stepsizes/np.min(stepsizes)
+            insert_before = np.where(nsamps_per_samp > 1)[0] + 1i
+            # subtract 1 because nsamps_per_samp = 1 means there is no gap
+            size_of_gap = nsamps_per_samp[insert_before - 1] - 1
 
-        all_inserts = np.ones(size_of_gap.sum(), data.shape[1]), dtype=bool)
-        where_inserts = []
-        for ii in range(len(size_of_gap)):
-            where_inserts += size_of_gap[ii] * [insert_before[ii]]
+            all_inserts = np.ones(size_of_gap.sum(), data.shape[1]), dtype=bool)
+            where_inserts = []
+            for ii in range(len(size_of_gap)):
+                where_inserts += size_of_gap[ii] * [insert_before[ii]]
 
-        data = np.insert(data,
-                         where_inserts,
-                         all_inserts.astype(data.dtype),
-                         axis=0)
+            data = np.insert(data,
+                             where_inserts,
+                             all_inserts.astype(data.dtype),
+                             axis=0)
 
-        mask = np.insert(mask,
-                         where_inserts,
-                         all_inserts,
-                         axis=0)
+            mask = np.insert(mask,
+                             where_inserts,
+                             all_inserts,
+                             axis=0)
 
-        self.data = np.ma.array(data, mask=mask)
-        self.nsamp = self.data.shape[0]
-        self.times = np.linspace(0., self.nsamp*self.tres, self.nsamp,
-                                 endpoint=False)
+            self.data = np.ma.array(data, mask=mask)
+            self.nsamp = self.data.shape[0]
+            self.times = np.linspace(0., self.nsamp*self.tres, self.nsamp,
+                                     endpoint=False)
 
     def replace_masked_times_with_noise(self, save_time_mask=True):
         new_mask = np.zeros(self.data.shape, dtype=bool)
@@ -405,9 +412,10 @@ class CHIMEdata:
 
     def save_data(self, out_fname):
         """
-        Saves the data (without the mask).
+        Saves the data to a .npy file that can be used in the class
+        constructor to reload the saved data.
         """
-        np.save(out_fname, self.data.data)
+        np.save(out_fname, np.array(self.data, self.fpga_count, self.tres))
 
 class PhaseVSFreqPlot:
     def __init__(self, data, low_f, high_f, p0=None, dm=None, dedisp=None):
