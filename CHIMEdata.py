@@ -415,7 +415,7 @@ class CHIMEdata:
         Saves the data to a .npy file that can be used in the class
         constructor to reload the saved data.
         """
-        np.save(out_fname, np.array(self.data, self.fpga_count, self.tres))
+        np.save(out_fname, np.array([self.data, self.fpga_count, self.tres]))
 
 class PhaseVSFreqPlot:
     def __init__(self, data, low_f, high_f, p0=None, dm=None, dedisp=None):
