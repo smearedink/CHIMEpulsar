@@ -516,6 +516,13 @@ class Profile:
         plt.plot(np.linspace(0, 2, 2*len(self.data), endpoint=False),
                  np.tile(self.data, 2))
         plt.xlabel("phase")
+    def calc_SNR(self, off_pulse_start, off_pulse_end):
+        """
+        off_pulse_start and off_pulse_end are phase values between 0 and 1 that
+        bracket an off-pulse region for estimating a baseline mean/stddev
+        """
+        print "NOT YET IMPLEMENTED, SORRY"
+        # TODO implement this, obviously
 
 def running_mean(arr, radius=50):
     """
