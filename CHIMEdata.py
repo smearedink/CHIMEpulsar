@@ -27,17 +27,20 @@ class CHIMEdata:
         if not isinstance(datafiles, str):
             dat = h5.File(datafiles[0], mode='r')
             self.tres = dat.attrs['fpga.int_period'][0]
+            self.ant_chans = dat.attrs['chan_indices']
             dat.close()
+            off_diag = (self.ant_chans['ant_chan_a'] !=\
+                self.ant_chans['ant_chan_b']).nonzero()[0]
             chunks = []
             tstamps = []
             for datafile in datafiles:
                 print "Loading %s..." % datafile
                 dat = h5.File(datafile, mode='r')
                 vis = dat['vis'].value['real'] + 1.j*dat['vis'].value['imag']
-                if isinstance(datachans, int):
-                    datachans = [datachans]
+                vis[:, off_diag, :] *= 2.
                 chunks.append(
-                    np.abs(vis[:,datachans,:]).sum(axis=1).astype('float32')
+                    np.abs(vis.sum(axis=1)).astype('float32')
+                    #np.abs(vis[:,datachans,:]).sum(axis=1).astype('float32')
                 )
                 del vis
                 tstamps.append(dat['timestamp'].value['fpga_count'])
@@ -529,11 +532,3 @@ def running_mean(arr, radius=50):
     try: return np.ma.array(ret[n-1:]/n, mask=mask)
     except: return ret[n-1:]/n
 
-# this is just a lookup table: corr_lookup[i,j] will produce the index (0-35) for
-# that feed pair's correlation in the data
-corr_lookup = np.zeros((8,8), dtype=int)
-ind = 0
-for ii in range(8):
-    for jj in range(ii, 8):
-        corr_lookup[ii,jj] = corr_lookup[jj,ii] = ind
-        ind += 1
