@@ -11,13 +11,11 @@ class CHIMEdata:
     'data' should either be a single .npy file as saved by the save_data
      method or an ordered list of CHIME hdf5 files.
 
-    'datachans' specifies which antenna-pair channels to use.  For now, only
-     boring incoherent power sums are used, so this should probably either be
-     one number that is the channel of a single feed's auto-correlation, or a
-     list of such channels, since in the latter case, the visibilities are just
-     going to have their magnitudes summed.
+    Currently assuming that eight feeds took data and summing them as phased
+     array *except* (and this is a big missing step!) that currently no phase
+     delays are being applied.
     """
-    def __init__(self, datafiles, datachans=0):
+    def __init__(self, datafiles):
         # If 'data' is a string, check if it ends with .npy
         if isinstance(datafiles, str):
             if datafiles[-4:] == '.npy':
@@ -531,3 +529,11 @@ def running_mean(arr, radius=50):
     try: return np.ma.array(ret[n-1:]/n, mask=mask)
     except: return ret[n-1:]/n
 
+# this is just a lookup table: corr_lookup[i,j] will produce the index (0-35) for
+# that feed pair's correlation in the data
+corr_lookup = np.zeros((8,8), dtype=int)
+ind = 0
+for ii in range(8):
+    for jj in range(ii, 8):
+        corr_lookup[ii,jj] = corr_lookup[jj,ii] = ind
+        ind += 1
