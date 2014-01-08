@@ -13,9 +13,16 @@ class CHIMEdata:
 
     Currently assuming that eight feeds took data and summing them as phased
      array *except* (and this is a big missing step!) that currently no phase
-     delays are being applied.
+     delays are being applied.  There is also a decent chance I'm doing this
+     wrong besides the phase delay issue. :)
+
+    If mode is 'full', auto and cross correlations are combined.  If mode is
+     'auto' or 'cross' only auto or cross correlations are used,
+     respectively.  This only applies if data is being read from hdf5 files
+     rather than a saved npy file.  If anything other than these three flags
+     is entered for mode, 'full' is assumed.
     """
-    def __init__(self, datafiles):
+    def __init__(self, datafiles, mode='full'):
         # If 'data' is a string, check if it ends with .npy
         if isinstance(datafiles, str):
             if datafiles[-4:] == '.npy':
@@ -29,6 +36,8 @@ class CHIMEdata:
             self.tres = dat.attrs['fpga.int_period'][0]
             self.ant_chans = dat.attrs['chan_indices']
             dat.close()
+            on_diag = (self.ant_chans['ant_chan_a'] ==\
+                self.ant_chans['ant_chan_b']).nonzero()[0]
             off_diag = (self.ant_chans['ant_chan_a'] !=\
                 self.ant_chans['ant_chan_b']).nonzero()[0]
             chunks = []
@@ -37,11 +46,23 @@ class CHIMEdata:
                 print "Loading %s..." % datafile
                 dat = h5.File(datafile, mode='r')
                 vis = dat['vis'].value['real'] + 1.j*dat['vis'].value['imag']
+                # I'm not totally sure this next line is right, but I'm doing
+                # it because I'm assuming the cross-correlations are the
+                # cross terms in the square of the sum of the antenna signals
+                # and when expanded out, each of these appears twice
                 vis[:, off_diag, :] *= 2.
-                chunks.append(
-                    np.abs(vis.sum(axis=1)).astype('float32')
-                    #np.abs(vis[:,datachans,:]).sum(axis=1).astype('float32')
-                )
+                if mode == 'auto':
+                    chunks.append(
+                        vis[:,on_diag,:].sum(axis=1).real.astype('float32')
+                    )
+                elif mode == 'cross':
+                    chunks.append(
+                        vis[:,off_diag,:].sum(axis=1).real.astype('float32')
+                    )
+                else:
+                    chunks.append(
+                        vis.sum(axis=1).real.astype('float32')
+                    )
                 del vis
                 tstamps.append(dat['timestamp'].value['fpga_count'])
                 dat.close()
@@ -518,11 +539,21 @@ class Profile:
         plt.xlabel("phase")
     def calc_SNR(self, off_pulse_start, off_pulse_end):
         """
+        A simple estimate of SNR: the peak value divided by the noise level.
+
         off_pulse_start and off_pulse_end are phase values between 0 and 1 that
         bracket an off-pulse region for estimating a baseline mean/stddev
         """
-        print "NOT YET IMPLEMENTED, SORRY"
-        # TODO implement this, obviously
+        start_i = int(round(len(self.data) * off_pulse_start) + 0.1)
+        end_i = int(round(len(self.data) * off_pulse_end) + 0.1)
+        if start_i < end_i:
+            base = self.data[start_i:end_i]
+        else:
+            base = np.concatenate((self.data[start_i:], self.data[:end_i]))
+        base_mean = np.mean(base)
+        base_std = np.std(base)
+        peak = np.max(self.data) - base_mean
+        return peak/base_std
 
 def running_mean(arr, radius=50):
     """
