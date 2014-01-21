@@ -298,6 +298,8 @@ class CHIMEdata:
         data /= running_mean(data)
         freqs = self.freqs[start_chan:end_chan]
         times = self.times[start_samp:end_samp]
+        data_std = data.std()
+        data_mean = data.mean()
         if kwargs.has_key('f_ref'): f_ref = kwargs['f_ref']
         else: f_ref = freqs[0] 
         profile = np.zeros(nbins, dtype=float)
@@ -307,9 +309,15 @@ class CHIMEdata:
         which_bins = (phases * nbins).astype(int)
         for ii in range(nbins):
             vals = data[which_bins == ii]
-            profile[ii] += vals.mean()
-        if not no_save: self.profile = Profile(profile, p0, dm, nbins)
-        return profile
+            profile[ii] = vals.mean()
+        Weq = (np.sum(profile - data_mean) * p0 / nbins) / np.max(profile - data_mean)
+        sig_p = data_std / np.sqrt(np.size(data) / nbins)
+        print Weq, sig_p, data_mean, data_std
+        SNR = np.sum(profile - data_mean) / (sig_p * np.sqrt(Weq))
+        if not no_save:
+            self.profile = Profile(profile, p0, dm, nbins)
+            self.profile.SNR = SNR
+        return profile, SNR
 
     def calc_phase_vs_freq(self, p0, dm, nbins=32, nsubs=32, dedisp=True,
                            **kwargs):
