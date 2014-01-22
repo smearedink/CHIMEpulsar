@@ -357,13 +357,14 @@ class CHIMEdata:
         low_f = self.freqs[-1]
         high_f = self.freqs[0]
         waterfall = []
+        snrs = []
         for ii in range(nsubs):
             start_chan = ii*(self.nfreq/nsubs)
             end_chan = (ii+1)*(self.nfreq/nsubs)
             seg_freqs = self.freqs[start_chan:end_chan]
             if dedisp: f_ref = self.freqs[0]
             else: f_ref = seg_freqs[0]
-            row = self.fold_pulsar(p0, dm, nbins,\
+            row, row_snr = self.fold_pulsar(p0, dm, nbins,\
                 start_samp=start_samp, end_samp=end_samp,
                 start_chan=start_chan, end_chan=end_chan, f_ref=f_ref,\
                 no_save=True, no_progress=True)
@@ -372,11 +373,14 @@ class CHIMEdata:
                     (100.*float(ii+1)/nsubs))
                 sys.stdout.flush()
             waterfall.append(np.tile(row, 2))
+            snrs.append(row_snr)
         waterfall = np.array(waterfall)
+        snrs = np.array(snrs)
         if not no_save:
             self.phase_vs_freq = PhaseVSFreqPlot(waterfall,\
                 low_f, high_f, p0, dm, dedisp)
-        return waterfall
+            self.phase_vs_freq.SNR = snrs
+        return waterfall, snrs
 
     def calc_phase_vs_time(self, p0, dm, nbins=32, nints=32, **kwargs):
         """
@@ -397,23 +401,27 @@ class CHIMEdata:
         start_t = self.times[0]
         end_t = self.times[-1]
         waterfall = []
+        snrs = []
         for ii in range(nints):
             start_samp = ii*(self.nsamp/nints)
             end_samp = (ii+1)*(self.nsamp/nints)
-            row = self.fold_pulsar(p0, dm, nbins,\
+            row, row_snr = self.fold_pulsar(p0, dm, nbins,\
                 start_samp=start_samp, end_samp=end_samp,\
                 no_save=True, no_progress=True)
             waterfall.append(np.tile(row, 2))
+            snrs.append(row_snr)
             if not no_progress:
                 sys.stdout.write("\rPhase-VS-Time progress: %-5.2f%%" %\
                     (100.*float(ii+1)/nints))
                 sys.stdout.flush()
 
         waterfall = np.array(waterfall)
+        snrs = np.array(snrs)
         if not no_save:
             self.phase_vs_time = PhaseVSTimePlot(waterfall,\
                 start_t, end_t, p0, dm)
-        return waterfall
+            self.phase_vs_time.SNR = snrs
+        return waterfall, snrs
 
     def calc_spectrum(self, dm, N=None, whiten=False, **kwargs):
         """
