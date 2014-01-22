@@ -289,17 +289,16 @@ class CHIMEdata:
         else: start_samp = 0
         if kwargs.has_key('end_samp'): end_samp = kwargs['end_samp']
         else: end_samp = self.nsamp
-        data = self.data[start_samp:end_samp, start_chan:end_chan].copy()
         # Dividing out a per-channel running mean (with the default radius of
         # 50 data points here) gets rid of the slow variation of the signal
         # over time and also, unlike subtracting the mean, appears to give the
         # noise the same amplitude across all frequency channels.  However, I
         # am not sure how 'correct' this is conceptually.
-        data /= running_mean(data)
+        data = self.data[start_samp:end_samp, start_chan:end_chan] /\
+            running_mean(self.data[start_samp:end_samp, start_chan:end_chan])
         freqs = self.freqs[start_chan:end_chan]
         times = self.times[start_samp:end_samp]
-        data_std = data.std()
-        data_mean = data.mean()
+        data_std = data[:min(10000, data.shape[0])].std()
         if kwargs.has_key('f_ref'): f_ref = kwargs['f_ref']
         else: f_ref = freqs[0] 
         profile = np.zeros(nbins, dtype=float)
@@ -310,10 +309,13 @@ class CHIMEdata:
         for ii in range(nbins):
             vals = data[which_bins == ii]
             profile[ii] = vals.mean()
-        Weq = (np.sum(profile - data_mean) * p0 / nbins) / np.max(profile - data_mean)
-        sig_p = data_std / np.sqrt(np.size(data) / nbins)
-        print Weq, sig_p, data_mean, data_std
-        SNR = np.sum(profile - data_mean) / (sig_p * np.sqrt(Weq))
+        baseline_mean = np.median([np.mean(aa) for aa\
+            in np.array_split(profile, 10)])
+        profile -= baseline_mean
+        Weq = np.sum(profile) / np.max(profile)
+        sig_p = data_std / np.sqrt(np.size(data) / float(nbins))
+        #print Weq, sig_p, baseline_mean, data_std
+        SNR = np.sum(profile) / (sig_p * np.sqrt(Weq))
         if not no_save:
             self.profile = Profile(profile, p0, dm, nbins)
             self.profile.SNR = SNR
