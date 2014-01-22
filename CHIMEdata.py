@@ -199,7 +199,7 @@ class CHIMEdata:
                 self.data.data[chan_mask,ii] = noise
             else:
                 new_mask[:,ii] = True
-            sys.stdout.write("\rProgress: %-5.2f%%" %\
+            sys.stdout.write("\rDummy noise progress: %-5.2f%%" %\
                 (100.*float(ii+1)/self.nfreq))
             sys.stdout.flush()
         if save_time_mask:
@@ -278,9 +278,13 @@ class CHIMEdata:
 
           no_save: if this is True, return output but don't store it in object
           (By default, it is False)
+          no_progress: if this is True, don't print a progress report to screen
+          (By default, it is False)
         """
         if kwargs.has_key('no_save'): no_save = kwargs['no_save']
         else: no_save = False
+        if kwargs.has_key('no_progress'): no_progress = kwargs['no_progress']
+        else: no_progress = False
         if kwargs.has_key('start_chan'): start_chan = kwargs['start_chan']
         else: start_chan = 0
         if kwargs.has_key('end_chan'): end_chan = kwargs['end_chan']
@@ -309,6 +313,10 @@ class CHIMEdata:
         for ii in range(nbins):
             vals = data[which_bins == ii]
             profile[ii] = vals.mean()
+            if not no_progress:
+                sys.stdout.write("\rProfile progress: %-5.2f%%" %\
+                    (100.*float(ii+1)/nbins))
+                sys.stdout.flush()
         baseline_mean = np.median([np.mean(aa) for aa\
             in np.array_split(profile, 10)])
         profile -= baseline_mean
@@ -335,9 +343,13 @@ class CHIMEdata:
 
           no_save: if this is True, return output but don't store it in object
           (By default, it is False)
+          no_progress: if this is True, don't print a progress report to screen
+          (By default, it is False)
         """
         if kwargs.has_key('no_save'): no_save = kwargs['no_save']
         else: no_save = False
+        if kwargs.has_key('no_progress'): no_save = kwargs['no_progress']
+        else: no_progress = False
         if kwargs.has_key('start_samp'): start_samp = kwargs['start_samp']
         else: start_samp = 0
         if kwargs.has_key('end_samp'): end_samp = kwargs['end_samp']
@@ -354,10 +366,11 @@ class CHIMEdata:
             row = self.fold_pulsar(p0, dm, nbins,\
                 start_samp=start_samp, end_samp=end_samp,
                 start_chan=start_chan, end_chan=end_chan, f_ref=f_ref,\
-                no_save=True)
-            sys.stdout.write("\rProgress: %-5.2f%%" %\
-                (100.*float(ii+1)/nsubs))
-            sys.stdout.flush()
+                no_save=True, no_progress=True)
+            if not no_progress:
+                sys.stdout.write("\rPhase-VS-Freq progress: %-5.2f%%" %\
+                    (100.*float(ii+1)/nsubs))
+                sys.stdout.flush()
             waterfall.append(np.tile(row, 2))
         waterfall = np.array(waterfall)
         if not no_save:
@@ -374,12 +387,13 @@ class CHIMEdata:
         kwargs:
           no_save: if this is True, return output but don't store it in object
           (By default, it is False)
-
-          no_save: if this is True, return output but don't store it in object
+          no_progress: if this is True, don't print a progress report to screen
           (By default, it is False)
         """
         if kwargs.has_key('no_save'): no_save = kwargs['no_save']
         else: no_save = False
+        if kwargs.has_key('no_progress'): no_progress = kwargs['no_progress']
+        else: no_progress = False
         start_t = self.times[0]
         end_t = self.times[-1]
         waterfall = []
@@ -388,11 +402,12 @@ class CHIMEdata:
             end_samp = (ii+1)*(self.nsamp/nints)
             row = self.fold_pulsar(p0, dm, nbins,\
                 start_samp=start_samp, end_samp=end_samp,\
-                no_save=True)
+                no_save=True, no_progress=True)
             waterfall.append(np.tile(row, 2))
-            sys.stdout.write("\rProgress: %-5.2f%%" %\
-                (100.*float(ii+1)/nints))
-            sys.stdout.flush()
+            if not no_progress:
+                sys.stdout.write("\rPhase-VS-Time progress: %-5.2f%%" %\
+                    (100.*float(ii+1)/nints))
+                sys.stdout.flush()
 
         waterfall = np.array(waterfall)
         if not no_save:
