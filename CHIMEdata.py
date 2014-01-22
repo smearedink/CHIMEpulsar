@@ -320,7 +320,9 @@ class CHIMEdata:
         baseline_mean = np.median([np.mean(aa) for aa\
             in np.array_split(profile, 10)])
         profile -= baseline_mean
-        Weq = np.sum(profile) / np.max(profile)
+        Weq = np.abs(np.sum(profile) / np.max(profile))
+        if Weq / nbins < 0.001:
+            Weq = nbins
         sig_p = data_std / np.sqrt(np.size(data) / float(nbins))
         #print Weq, sig_p, baseline_mean, data_std
         SNR = np.sum(profile) / (sig_p * np.sqrt(Weq))
